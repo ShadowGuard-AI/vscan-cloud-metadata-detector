@@ -12,5 +12,8 @@ Detects if cloud metadata endpoints are accessible (e.g., AWS, GCP, Azure) by se
 - `-u`: Target URL to check for metadata exposure. If not provided, performs basic checks against known endpoints.
 - `-v`: Enable verbose output for debugging.
 
+## Notes
+With `-u`, each known metadata path (for example `latest/meta-data/`) is built onto the target URL, and the checked address is the target with that path. When an endpoint answers, the log records the status, the response length, and the names of any matched sensitive keywords. The response body itself is never written to the log.
+
 ## License
 Copyright (c) ShadowGuardAI

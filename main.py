@@ -2,6 +2,7 @@ import argparse
 import requests
 import logging
 import sys
+from urllib.parse import urlparse
 from bs4 import BeautifulSoup
 
 # Configure logging
@@ -55,14 +56,22 @@ def check_metadata_endpoint(url, headers=None, sensitive_keywords=None):
         response.raise_for_status()  # Raise HTTPError for bad responses (4xx or 5xx)
         content = response.text
 
+        # Report the status, the response length, and the names of any
+        # matched keywords only. The response body itself is never logged.
+        logging.info(f"Response from {url}: status {response.status_code}, length {len(content)}")
+
+        matched = []
         if sensitive_keywords:
             for keyword in sensitive_keywords:
-                if keyword in content.lower():  # Case-insensitive search
-                    logging.warning(f"Possible sensitive information found (keyword: {keyword}) in {url}")
-                    return True
+                if keyword.lower() in content.lower():  # Case-insensitive search
+                    matched.append(keyword)
+
+        if matched:
+            logging.warning(f"Possible sensitive information found (keywords: {', '.join(matched)}) in {url}")
+            return True
 
         if content:
-             logging.info(f"Content retrieved from {url}:\n{content}")
+             logging.info(f"Content retrieved from {url} (status {response.status_code}, length {len(content)}, no sensitive keywords matched)")
              return True
         else:
             logging.info(f"No content retrieved from {url}")
@@ -89,7 +98,14 @@ def scan_target_url(target_url):
     logging.info(f"Starting scan on target URL: {target_url}")
 
     for cloud, config in METADATA_ENDPOINTS.items():
-        metadata_url = target_url.rstrip('/') + config["url"]
+        # Build the metadata path onto the operator's target. The known
+        # endpoint contributes only its path (and query), never its full
+        # URL, so the checked address stays a valid URL on the target.
+        endpoint = urlparse(config["url"])
+        metadata_path = endpoint.path
+        if endpoint.query:
+            metadata_path = metadata_path + "?" + endpoint.query
+        metadata_url = target_url.rstrip('/') + metadata_path
         headers = config.get("headers")
         sensitive_keywords = config.get("sensitive_keywords")
 
