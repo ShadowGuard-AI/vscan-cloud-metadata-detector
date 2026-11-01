@@ -52,6 +52,7 @@ def check_metadata_endpoint(url, headers=None, sensitive_keywords=None):
     """
     try:
         logging.info(f"Checking metadata endpoint: {url}")
+        # Requests follows redirects by default, so the page I search for keywords may not live at this URL at all. A target that redirects the metadata path to its home page would produce a confident looking content match from a page that has nothing to do with metadata.
         response = requests.get(url, headers=headers, timeout=5)
         response.raise_for_status()  # Raise HTTPError for bad responses (4xx or 5xx)
         content = response.text
@@ -63,6 +64,7 @@ def check_metadata_endpoint(url, headers=None, sensitive_keywords=None):
         matched = []
         if sensitive_keywords:
             for keyword in sensitive_keywords:
+                # Substring matching cuts both ways: iam appears inside ordinary words, and instance appears in plenty of harmless text. A match says the word was present, nothing about whether a credential or a token was anywhere near it.
                 if keyword.lower() in content.lower():  # Case-insensitive search
                     matched.append(keyword)
 
@@ -70,6 +72,7 @@ def check_metadata_endpoint(url, headers=None, sensitive_keywords=None):
             logging.warning(f"Possible sensitive information found (keywords: {', '.join(matched)}) in {url}")
             return True
 
+        # Any non empty body counts as exposure here, matched keywords or not. A custom 404 page or a login page served with a 200 would be reported the same way, because the test is really whether something answered at that path, and the keyword match only changes the wording of the log line.
         if content:
              logging.info(f"Content retrieved from {url} (status {response.status_code}, length {len(content)}, no sensitive keywords matched)")
              return True
@@ -105,10 +108,12 @@ def scan_target_url(target_url):
         metadata_path = endpoint.path
         if endpoint.query:
             metadata_path = metadata_path + "?" + endpoint.query
+        # AWS and Azure share the same address here, so a target scan tries both path shapes against one host and applies each providers headers in turn. The answers are logged per provider, but a host that answers the shared address cannot tell me which cloud it belongs to.
         metadata_url = target_url.rstrip('/') + metadata_path
         headers = config.get("headers")
         sensitive_keywords = config.get("sensitive_keywords")
 
+        # The return value is thrown away by both callers. Everything this tool concludes lives in the log lines, the process exits 0 either way, and a calling script has nothing to test except its own reading of the log.
         check_metadata_endpoint(metadata_url, headers, sensitive_keywords)
 
 
@@ -126,6 +131,7 @@ def main():
         scan_target_url(args.url)
     else:
         # Basic Checks against known endpoints
+        # Run with no target, this reaches out to the real link local addresses from the machine it runs on. On an actual cloud instance that is a live test of my own metadata service, not a simulation, and the answers describe this machine.
         logging.info("Performing basic checks against known metadata endpoints...")
         for cloud, config in METADATA_ENDPOINTS.items():
             logging.info(f"Checking {cloud} metadata endpoint: {config['url']}")
