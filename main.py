@@ -3,7 +3,6 @@ import requests
 import logging
 import sys
 from urllib.parse import urlparse
-from bs4 import BeautifulSoup
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -52,8 +51,13 @@ def check_metadata_endpoint(url, headers=None, sensitive_keywords=None):
     """
     try:
         logging.info(f"Checking metadata endpoint: {url}")
-        # Requests follows redirects by default, so the page I search for keywords may not live at this URL at all. A target that redirects the metadata path to its home page would produce a confident looking content match from a page that has nothing to do with metadata.
-        response = requests.get(url, headers=headers, timeout=5)
+        # Redirects are not followed: a redirect at a metadata path is
+        # not a metadata response, and following it could match keywords
+        # on an unrelated page (for example the site home page).
+        response = requests.get(url, headers=headers, timeout=5, allow_redirects=False)
+        if 300 <= response.status_code < 400:
+            logging.info(f"Redirect from {url} (status {response.status_code}) not followed, not a metadata response")
+            return False
         response.raise_for_status()  # Raise HTTPError for bad responses (4xx or 5xx)
         content = response.text
 
@@ -72,10 +76,12 @@ def check_metadata_endpoint(url, headers=None, sensitive_keywords=None):
             logging.warning(f"Possible sensitive information found (keywords: {', '.join(matched)}) in {url}")
             return True
 
-        # Any non empty body counts as exposure here, matched keywords or not. A custom 404 page or a login page served with a 200 would be reported the same way, because the test is really whether something answered at that path, and the keyword match only changes the wording of the log line.
+        # A response with no matched sensitive keyword is not reported
+        # as exposure: any web page served with a 200 at this path would
+        # otherwise count, including a custom error or login page.
         if content:
-             logging.info(f"Content retrieved from {url} (status {response.status_code}, length {len(content)}, no sensitive keywords matched)")
-             return True
+             logging.info(f"Content retrieved from {url} (status {response.status_code}, length {len(content)}, no sensitive keywords matched, not reported as exposure)")
+             return False
         else:
             logging.info(f"No content retrieved from {url}")
             return False
